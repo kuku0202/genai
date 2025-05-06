@@ -1,23 +1,19 @@
-PDF to PowerPoint
-Triggered by a new record in DynamoDB, \texttt{lambda\_func.py} handles PDF processing.
-It downloads the uploaded PDF from S3, uses \texttt{process\_pdf()} (in \texttt{ppt.py}) to extract figures and text using PyMuPDF and LayoutParser, and generates annotated folders per page.
-The folders include images, slide scripts, and teacher scripts, which are all uploaded to S3 for future use.
-Then, \texttt{create\_pptx()} generates a PowerPoint file (\texttt{.pptx}) using \href{https://python-pptx.readthedocs.io/en/latest/}{\texttt{python-pptx}}, and saves it locally before uploading to S3.
- The generated file is also emailed to the user using AWS SES (\texttt{send\_email\_with\_attachment}).
- Finally, a message with metadata (PPT key, PDF name, user email) is sent to SQS for video generation.
+PDF to PowerPoint(Lambda)
+- First, the lambda function will read the incoming event from DynamoDB to extract the file_key and user, where the file_key is the S3 path of uploaded PDF in slidevox-pdf-storage 
+- Download the PDF to /tmp/input.pdf using boto3
+- Call process_pdf to extract text and figures using PyMuPDF and LayoutParser, generate slide scripts and teacher scripts via GPT and store each page's results in output/page_x folders
+- Next, upload page assets to S3 including PDF text, teacher scripts, slide scripts, and relevant images
+- Call create_pptx() to combine extracted content into a structured pptx and save to the tmp directory
+- Upload .pptx to S3, including user_email 
+- Send the PowerPoint to the user using AWS SES with a MIME-formatted email
+- Send Task to SQS by creating a JSON message with ppt_key, pdf_name, user_email
 
-
-\paragraph{EC2 Stage (PPT to Video)}
-\begin{itemize}
-    \item A long-running container (\texttt{main.py}) continuously polls the SQS queue for new messages.
-    \item Upon receiving a task, it downloads the generated PPTX and its corresponding page folders (scripts, images) using \texttt{download\_folder()}.
-    \item Slide images are extracted via \texttt{extract-ppt.py}, which internally uses LibreOffice to export each slide to PNG.
-    \item Then, \texttt{video.py} is called to synthesize narration from scripts (using TTS like gTTS or edge-tts) and merge it with slide images into an MP4 using FFmpeg.
-    \item The final video is uploaded to S3, and a pre-signed download link is emailed to the user via \texttt{send\_email\_with\_link()}.
-\end{itemize}
-
-\paragraph{Dockerized Environments}
-\begin{itemize}
-    \item \textbf{Lambda Image:} Built from \href{https://hub.docker.com/r/public.ecr.aws/lambda/python}{AWS Lambda Python 3.10 base image}, the Dockerfile installs PyMuPDF, LayoutParser, and Detectron2 (for layout detection), and sets the handler to \texttt{lambda\_func.lambda\_handler}. See \texttt{Dockerfile.lambda}.
-    \item \textbf{EC2 Image:} Based on \texttt{python:3.10-slim}, the image installs LibreOffice, FFmpeg, Tesseract, and required Python packages. It runs \texttt{main.py} by default. See \texttt{Dockerfile.ec2}.
-\end{itemize}
+PowerPoint to video(EC2)
+- First poll the SQS Queue by calling the sqs.receive_message(). Once received, it extracts ppt_key, pdf_name and user email
+- Create temporary directory under /tmp/project_[pdf_name]. Since each temporary directory is unique, it allow multiple task processing
+- Download the .pptx file from S3 to /tmp/project_[pdf_name]/slides.pptx and extracted folders from pdf-to-ppt-output/output/pages/[pdf_name]/ into the same temp directory
+- Call extract-ppt.py (LibreOffice backend) to convert the PowerPoint file into slide images (PNG format), saved in slides/
+- Calls video.py to generate audio narration using TTS (e.g., gTTS or edge-tts) from teacher scripts, merge audio with slide images using FFmpeg and store video
+- Upload the generated video to the ppt-to-video-output bucket
+- Use generate_presigned_url() to create a time-limited S3 download link (valid for 24 hours)
+- After video sent, cleanup the directory and delete that message
