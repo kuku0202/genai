@@ -1,12 +1,11 @@
-\paragraph{Lambda Stage (PDF to PowerPoint)}
-\begin{itemize}
-    \item Triggered by a new record in DynamoDB, \texttt{lambda\_func.py} handles PDF processing.
-    \item It downloads the uploaded PDF from S3, uses \texttt{process\_pdf()} (in \texttt{ppt.py}) to extract figures and text using PyMuPDF and LayoutParser, and generates annotated folders per page.
-    \item The folders include images, slide scripts, and teacher scripts, which are all uploaded to S3 for future use.
-    \item Then, \texttt{create\_pptx()} generates a PowerPoint file (\texttt{.pptx}) using \href{https://python-pptx.readthedocs.io/en/latest/}{\texttt{python-pptx}}, and saves it locally before uploading to S3.
-    \item The generated file is also emailed to the user using AWS SES (\texttt{send\_email\_with\_attachment}).
-    \item Finally, a message with metadata (PPT key, PDF name, user email) is sent to SQS for video generation.
-\end{itemize}
+PDF to PowerPoint
+Triggered by a new record in DynamoDB, \texttt{lambda\_func.py} handles PDF processing.
+It downloads the uploaded PDF from S3, uses \texttt{process\_pdf()} (in \texttt{ppt.py}) to extract figures and text using PyMuPDF and LayoutParser, and generates annotated folders per page.
+The folders include images, slide scripts, and teacher scripts, which are all uploaded to S3 for future use.
+Then, \texttt{create\_pptx()} generates a PowerPoint file (\texttt{.pptx}) using \href{https://python-pptx.readthedocs.io/en/latest/}{\texttt{python-pptx}}, and saves it locally before uploading to S3.
+ The generated file is also emailed to the user using AWS SES (\texttt{send\_email\_with\_attachment}).
+ Finally, a message with metadata (PPT key, PDF name, user email) is sent to SQS for video generation.
+
 
 \paragraph{EC2 Stage (PPT to Video)}
 \begin{itemize}
